@@ -1,0 +1,1 @@
+{"version":3,"file":"examSession.d.ts","sourceRoot":"","sources":["../../../src/generated/types/examSession.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AACH,OAAO,KAAK,EAAE,iBAAiB,EAAE,MAAM,qBAAqB,CAAC;AAE7D,MAAM,WAAW,WAAW;IAC1B,EAAE,EAAE,MAAM,CAAC;IACX,IAAI,EAAE,MAAM,CAAC;IACb,IAAI,EAAE,MAAM,CAAC;IACb,MAAM,EAAE,iBAAiB,CAAC;IAC1B,eAAe,EAAE,MAAM,CAAC;CACzB"}

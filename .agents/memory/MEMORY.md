@@ -1,0 +1,1 @@
+- [API codegen and import safety](api-and-seeding.md) — keep generated Zod exports safe and treat uploaded rosters and rooms as the source of truth.

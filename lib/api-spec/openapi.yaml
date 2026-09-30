@@ -1,0 +1,802 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Exam Seating Manager API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+  - name: dashboard
+  - name: rooms
+  - name: classes
+  - name: students
+  - name: sessions
+  - name: seating
+  - name: lookup
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get dashboard summary
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /rooms:
+    get:
+      operationId: listRooms
+      tags: [rooms]
+      summary: List rooms
+      responses:
+        "200":
+          description: Room list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+    post:
+      operationId: createRoom
+      tags: [rooms]
+      summary: Create a room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomInput"
+      responses:
+        "201":
+          description: Created room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+  /rooms/{roomId}:
+    patch:
+      operationId: updateRoom
+      tags: [rooms]
+      summary: Update a room
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomUpdate"
+      responses:
+        "200":
+          description: Updated room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+    delete:
+      operationId: deleteRoom
+      tags: [rooms]
+      summary: Delete a room
+      parameters:
+        - $ref: "#/components/parameters/RoomId"
+      responses:
+        "204":
+          description: Room deleted
+  /rooms/import/preview:
+    post:
+      operationId: previewRoomImport
+      tags: [rooms]
+      summary: Preview bulk room rows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomImportInput"
+      responses:
+        "200":
+          description: Parsed room preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomImportPreview"
+  /rooms/import/confirm:
+    post:
+      operationId: confirmRoomImport
+      tags: [rooms]
+      summary: Save previewed room rows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoomImportConfirm"
+      responses:
+        "201":
+          description: Imported rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+  /classes:
+    get:
+      operationId: listClasses
+      tags: [classes]
+      summary: List imported classes
+      responses:
+        "200":
+          description: Class list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Class"
+  /classes/import/preview:
+    post:
+      operationId: previewRosterImport
+      tags: [classes]
+      summary: Preview an uploaded roll-number list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterImportInput"
+      responses:
+        "200":
+          description: Parsed roster preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterImportPreview"
+  /classes/import/confirm:
+    post:
+      operationId: confirmRosterImport
+      tags: [classes]
+      summary: Replace the current roster with uploaded rows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RosterImportConfirm"
+      responses:
+        "201":
+          description: Imported roster summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RosterImportResult"
+  /classes/{classId}/students:
+    get:
+      operationId: listStudents
+      tags: [students]
+      summary: List students in a class
+      parameters:
+        - $ref: "#/components/parameters/ClassId"
+      responses:
+        "200":
+          description: Student list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Student"
+    post:
+      operationId: bulkAddStudents
+      tags: [students]
+      summary: Add students to a class
+      parameters:
+        - $ref: "#/components/parameters/ClassId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudentBulkInput"
+      responses:
+        "201":
+          description: Added students
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Student"
+  /students/{studentId}:
+    delete:
+      operationId: deleteStudent
+      tags: [students]
+      summary: Remove a student
+      parameters:
+        - $ref: "#/components/parameters/StudentId"
+      responses:
+        "204":
+          description: Student removed
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      summary: List exam sessions
+      responses:
+        "200":
+          description: Exam session list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExamSession"
+    post:
+      operationId: createSession
+      tags: [sessions]
+      summary: Create an exam session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionInput"
+      responses:
+        "201":
+          description: Created session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExamSession"
+  /sessions/{sessionId}:
+    get:
+      operationId: getSession
+      tags: [sessions]
+      summary: Get an exam session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionDetail"
+    patch:
+      operationId: updateSession
+      tags: [sessions]
+      summary: Update an exam session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionUpdate"
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExamSession"
+    delete:
+      operationId: deleteSession
+      tags: [sessions]
+      summary: Delete an exam session and its seating data
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "204":
+          description: Session deleted
+  /sessions/{sessionId}/groups:
+    post:
+      operationId: createSeatingGroup
+      tags: [sessions, seating]
+      summary: Create a multi-class seating group
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeatingGroupInput"
+      responses:
+        "201":
+          description: Created seating group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatingGroup"
+  /sessions/{sessionId}/groups/{groupId}:
+    delete:
+      operationId: deleteSeatingGroup
+      tags: [sessions, seating]
+      summary: Delete a seating group and its room assignments
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Seating group deleted
+  /sessions/{sessionId}/generate:
+    post:
+      operationId: generateSeating
+      tags: [seating]
+      summary: Generate seating for all groups in a session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Generated assignment preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeatingPreview"
+  /sessions/{sessionId}/finalize:
+    post:
+      operationId: finalizeSession
+      tags: [sessions]
+      summary: Finalize an exam session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Finalized session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExamSession"
+  /sessions/{sessionId}/assignments:
+    get:
+      operationId: getSessionAssignments
+      tags: [seating]
+      summary: List assignments for a session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: roomId
+          schema:
+            type: [string, "null"]
+      responses:
+        "200":
+          description: Assignment list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeatAssignment"
+    post:
+      operationId: addSessionAssignments
+      tags: [seating]
+      summary: Add manually selected students to room seats
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManualAssignmentsInput"
+      responses:
+        "201":
+          description: Updated assignment list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeatAssignment"
+  /sessions/{sessionId}/eligible-students:
+    get:
+      operationId: listEligibleStudents
+      tags: [seating]
+      summary: List students not yet seated in a session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - in: query
+          name: classIds
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Eligible students
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Student"
+  /sessions/{sessionId}/assignments/swap:
+    post:
+      operationId: swapAssignments
+      tags: [seating]
+      summary: Swap two occupied seats
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SwapInput"
+      responses:
+        "200":
+          description: Updated assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SeatAssignment"
+  /lookup/student:
+    get:
+      operationId: lookupStudent
+      tags: [lookup]
+      summary: Find a student's seat
+      parameters:
+        - in: query
+          name: rollNo
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: classId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Student seat result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LookupResult"
+  /lookup/room:
+    get:
+      operationId: lookupRoom
+      tags: [lookup]
+      summary: Get a room chart
+      parameters:
+        - in: query
+          name: roomId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: sessionId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Room chart
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomChart"
+components:
+  parameters:
+    RoomId:
+      in: path
+      name: roomId
+      required: true
+      schema: { type: string }
+    ClassId:
+      in: path
+      name: classId
+      required: true
+      schema: { type: string }
+    StudentId:
+      in: path
+      name: studentId
+      required: true
+      schema: { type: string }
+    SessionId:
+      in: path
+      name: sessionId
+      required: true
+      schema: { type: string }
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    Room:
+      type: object
+      required: [id, sno, name, type, capacity, benches, columns, seatsPerBench]
+      properties:
+        id: { type: string }
+        sno: { type: integer, minimum: 1 }
+        name: { type: string }
+        type: { type: string, enum: [classroom, hall] }
+        capacity: { type: integer }
+        benches: { type: integer, minimum: 1 }
+        columns: { type: integer }
+        seatsPerBench: { type: integer, enum: [1, 2] }
+        updatedAt: { type: string }
+    RoomInput:
+      type: object
+      required: [sno, name, type, capacity, benches, columns, seatsPerBench]
+      properties:
+        sno: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1 }
+        type: { type: string, enum: [classroom, hall] }
+        capacity: { type: integer, minimum: 1 }
+        benches: { type: integer, minimum: 1 }
+        columns: { type: integer, minimum: 1 }
+        seatsPerBench: { type: integer, enum: [1, 2] }
+    RoomUpdate:
+      type: object
+      properties:
+        sno: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 1 }
+        type: { type: string, enum: [classroom, hall] }
+        capacity: { type: integer, minimum: 1 }
+        benches: { type: integer, minimum: 1 }
+        columns: { type: integer, minimum: 1 }
+        seatsPerBench: { type: integer, enum: [1, 2] }
+    RoomImportInput:
+      type: object
+      required: [rows]
+      properties:
+        fileName: { type: string }
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomInput"
+    RoomImportPreview:
+      type: object
+      required: [rows, errors]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomInput"
+        errors:
+          type: array
+          items: { type: string }
+    RoomImportConfirm:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoomInput"
+    RosterRow:
+      type: object
+      required: [grade, section, rollNo]
+      properties:
+        grade: { type: integer, minimum: 1, maximum: 12 }
+        section: { type: string, minLength: 1 }
+        rollNo: { type: integer, minimum: 1 }
+        name: { type: string }
+    RosterImportInput:
+      type: object
+      required: [rows]
+      properties:
+        fileName: { type: string }
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterRow"
+    RosterImportPreview:
+      type: object
+      required: [rows, errors]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterRow"
+        errors:
+          type: array
+          items: { type: string }
+    RosterImportConfirm:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterRow"
+    RosterImportResult:
+      type: object
+      required: [classCount, studentCount]
+      properties:
+        classCount: { type: integer }
+        studentCount: { type: integer }
+    Class:
+      type: object
+      required: [id, grade, section, label, studentCount]
+      properties:
+        id: { type: string }
+        grade: { type: integer }
+        section: { type: string }
+        label: { type: string }
+        studentCount: { type: integer }
+    Student:
+      type: object
+      required: [id, rollNo, classId]
+      properties:
+        id: { type: string }
+        rollNo: { type: integer }
+        name: { type: [string, "null"] }
+        classId: { type: string }
+    StudentBulkInput:
+      type: object
+      required: [from, to]
+      properties:
+        from: { type: integer, minimum: 1 }
+        to: { type: integer, minimum: 1 }
+        namePrefix: { type: string }
+    ExamSession:
+      type: object
+      required: [id, name, date, status, assignmentCount]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        date: { type: string }
+        status: { type: string, enum: [draft, finalized] }
+        assignmentCount: { type: integer }
+    SessionInput:
+      type: object
+      required: [name, date]
+      properties:
+        name: { type: string, minLength: 1 }
+        date: { type: string }
+    SessionUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        date: { type: string }
+    SeatingGroup:
+      type: object
+      required: [id, sessionId, name, classIds, roomIds]
+      properties:
+        id: { type: string }
+        sessionId: { type: string }
+        name: { type: string }
+        classIds:
+          type: array
+          items: { type: string }
+        roomIds:
+          type: array
+          items: { type: string }
+    SeatingGroupInput:
+      type: object
+      required: [name, classIds, roomIds]
+      properties:
+        name: { type: string, minLength: 1 }
+        classIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        roomIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+    SessionDetail:
+      allOf:
+        - $ref: "#/components/schemas/ExamSession"
+        - type: object
+          required: [groups]
+          properties:
+            groups:
+              type: array
+              items:
+                $ref: "#/components/schemas/SeatingGroup"
+    SeatAssignment:
+      type: object
+      required: [id, sessionId, roomId, roomName, columnNo, benchNo, seatNo, studentId, rollNo, classId, classLabel]
+      properties:
+        id: { type: string }
+        sessionId: { type: string }
+        roomId: { type: string }
+        roomName: { type: string }
+        columnNo: { type: integer }
+        benchNo: { type: integer }
+        seatNo: { type: integer }
+        studentId: { type: string }
+        rollNo: { type: integer }
+        classId: { type: string }
+        classLabel: { type: string }
+        studentName: { type: [string, "null"] }
+    SeatingPreview:
+      type: object
+      required: [assignments, assignedCount, unassignedCount]
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeatAssignment"
+        assignedCount: { type: integer }
+        unassignedCount: { type: integer }
+    SwapInput:
+      type: object
+      required: [firstAssignmentId, secondAssignmentId]
+      properties:
+        firstAssignmentId: { type: string }
+        secondAssignmentId: { type: string }
+    ManualAssignmentsInput:
+      type: object
+      required: [roomId, assignments]
+      properties:
+        roomId: { type: string }
+        assignments:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [studentId, columnNo, benchNo, seatNo]
+            properties:
+              studentId: { type: string }
+              columnNo: { type: integer, minimum: 1 }
+              benchNo: { type: integer, minimum: 1 }
+              seatNo: { type: integer, minimum: 1 }
+    LookupResult:
+      type: object
+      required: [rollNo, classLabel, roomName, columnNo, benchNo, seatNo]
+      properties:
+        rollNo: { type: integer }
+        classLabel: { type: string }
+        roomName: { type: string }
+        columnNo: { type: integer }
+        benchNo: { type: integer }
+        seatNo: { type: integer }
+    RoomChart:
+      type: object
+      required: [room, assignments]
+      properties:
+        room:
+          $ref: "#/components/schemas/Room"
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeatAssignment"
+    Dashboard:
+      type: object
+      required: [roomCount, classCount, studentCount, activeSessionCount, latestSession]
+      properties:
+        roomCount: { type: integer }
+        classCount: { type: integer }
+        studentCount: { type: integer }
+        activeSessionCount: { type: integer }
+        latestSession:
+          type: [object, "null"]
+          properties:
+            id: { type: string }
+            name: { type: string }
+            date: { type: string }
+            status: { type: string }

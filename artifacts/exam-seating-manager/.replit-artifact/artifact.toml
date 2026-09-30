@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Exam Seating Manager"
+description = "A practical school operations app for managing rooms and classes, generating multi-class exam seating plans, looking up student seats, and printing room charts."
+version = "1.0.0"
+id = "artifacts/exam-seating-manager"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20074
+
+[services.development]
+run = "pnpm --filter @workspace/exam-seating-manager run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/exam-seating-manager", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/exam-seating-manager/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20074"
+BASE_PATH = "/"

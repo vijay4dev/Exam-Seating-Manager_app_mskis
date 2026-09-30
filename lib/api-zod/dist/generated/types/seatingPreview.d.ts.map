@@ -1,0 +1,1 @@
+{"version":3,"file":"seatingPreview.d.ts","sourceRoot":"","sources":["../../../src/generated/types/seatingPreview.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AACH,OAAO,KAAK,EAAE,cAAc,EAAE,MAAM,kBAAkB,CAAC;AAEvD,MAAM,WAAW,cAAc;IAC7B,WAAW,EAAE,cAAc,EAAE,CAAC;IAC9B,aAAa,EAAE,MAAM,CAAC;IACtB,eAAe,EAAE,MAAM,CAAC;CACzB"}

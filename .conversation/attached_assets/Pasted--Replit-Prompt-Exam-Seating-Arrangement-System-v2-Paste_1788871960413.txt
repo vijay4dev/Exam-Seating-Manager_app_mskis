@@ -1,0 +1,58 @@
+# Replit Prompt — Exam Seating Arrangement System (v2)
+
+Paste this into Replit's Agent/AI when creating a new Repl.
+
+---
+
+Build a full-stack web app called **"Exam Seating Manager"** for a K-12 school to auto-generate exam seating arrangements and let teachers look up where a student is seated.
+
+**Tech stack:** Node.js + Express backend, React frontend (Vite). **Use Firebase for all data storage** — Firestore as the database, and Firebase Storage for any uploaded files (the room-strength document). Use the Firebase Admin SDK on the backend. Single Repl, single run command. Responsive UI, clean and simple — no need for heavy design polish.
+
+## Data model (Firestore collections)
+- **classes**: grade (1-12), section (A/B, or A/B/C for grades 10-12 — seed this automatically: grades 1-9 get sections A and B, grades 10-12 get sections A, B, C).
+- **students**: roll_no, class_id, name (optional).
+- **rooms**: name/number, type ("classroom" or "hall"), capacity (classrooms: 25-50, validate on save; halls: default 60), columns (integer, default 3, min 1), seats_per_bench (1 or 2, default 2). Room capacities can be entered manually OR imported in bulk from an uploaded document (see below).
+- **examSessions**: name, date, status (draft/finalized).
+- **seatingGroups**: belongs to an examSession, references a **list of classes to mix** (not just two — the admin can select any number of classes/sections to combine in a room, e.g. 6th, 7th and 8th all mixed together), and an ordered list of room ids to fill in sequence.
+- **seatAssignments**: exam_session_id, room_id, column_no, bench_no, seat_no (1 or 2), student_id, roll_no, class_id.
+
+## Room-strength document upload
+- Add an **"Upload Room Strength"** feature on the Rooms page: admin uploads a spreadsheet/document (support .xlsx and .csv at minimum) listing each room and its seating strength (e.g. columns: Room Name, Type, Capacity, and optionally Columns / Seats-per-bench).
+- Store the uploaded file in Firebase Storage, parse it on the backend, and create/update the corresponding room records in Firestore with the strengths from the file.
+- Show the admin a preview of the parsed rows before confirming the import, so they can catch mistakes (e.g. a capacity outside the 25-50 range for a classroom) before it's saved.
+- Admin can still add or edit individual rooms manually after importing.
+
+## Core allocation algorithm — mixing any number of classes
+When the admin clicks "Generate Seating" for a Seating Group:
+1. Get the ordered roll-number list for **every class** selected in the group (could be 2, 3, or more classes/sections mixed together).
+2. Get the ordered list of rooms for this group, along with each room's capacity, columns, and seats-per-bench (either entered manually or imported from the uploaded document).
+3. For each room in order:
+   - Work out how many seats the room has in total, and divide it into columns as configured.
+   - Fill column 1 top-to-bottom first, then column 2, and so on.
+   - **Cycle through the selected classes in rotation** as each seat is filled — e.g. with 3 classes selected (A, B, C) and 2 seats per bench: Seat 1 of bench 1 = next roll from Class A, Seat 2 of bench 1 = next roll from Class B, Seat 1 of bench 2 = next roll from Class C, Seat 2 of bench 2 = next roll from Class A, and so on — so that no two adjacent seats are ever from the same class where it can be avoided, regardless of how many classes are being mixed.
+   - If a class runs out of roll numbers partway through, simply skip it in the rotation and keep cycling through the remaining classes.
+   - Stop when the room is full, or all selected classes run out of students. Carry any remaining roll numbers into the next room in the list, continuing the sequence for each class (do not restart any class from roll #1 — track how many of each class have already been seated and resume from there).
+4. Save all resulting seatAssignment records for the session.
+5. Show a preview grid (rooms as sections, columns as columns, benches as rows, each cell showing "RollNo (Class)", color-coded per class so it's easy to see the mix at a glance) before the admin finalizes. Allow the admin to click any two cells to swap the students, or click an empty/occupied cell to manually assign/move a student.
+
+## Screens/pages needed
+1. **Rooms** — list/add/edit/delete rooms (name, type, capacity, columns, seats_per_bench), PLUS an "Upload Room Strength" button to bulk-import rooms from a spreadsheet/document as described above. Validate classroom capacity 25-50.
+2. **Classes & Students** — pick a grade+section, bulk-add a roll number range (e.g. "from 1 to 45") or add/remove individual roll numbers.
+3. **Exam Sessions** — create a session, then within it create Seating Groups: pick **any number of classes/sections to mix** (not limited to two), pick and order the rooms to use. Button to "Generate Seating" with a preview/edit grid before finalizing, and a "Re-generate" option.
+4. **Lookup** — a simple search box: enter roll number + pick class/section → shows Room, Column, Bench, Seat number in large readable text. Also allow searching by room to see its full chart.
+5. **Print/Export** — a printable view per room (grid layout) and a master list (all students sorted by class then roll no, with their room/seat), both usable via the browser's print-to-PDF.
+
+## Important business rules to enforce
+- Classroom capacity: 25–50. Halls: capacity defaults to 60 but is editable like any room.
+- Columns: minimum 1, default 3, no zero allowed.
+- Seats per bench: 1 or 2, default 2, set per room.
+- Grades 1–9: sections A, B. Grades 10–12: sections A, B, C. Seed this on first run.
+- A room can mix **as many classes as the admin chooses**, not just two — the mixing logic must scale to any number of selected classes.
+- Manually removing a student from a seat should not auto-shift all other students — only an explicit "re-pack" action does that.
+
+## Other requirements
+- Simple admin login (Firebase Authentication is fine) protecting Rooms/Classes/Exam Sessions/Generate; the Lookup page can be open.
+- All data (rooms, classes, students, sessions, seat assignments) persisted in Firestore; uploaded room-strength documents stored in Firebase Storage.
+- Keep the UI clean, mobile-friendly (teachers will often use the Lookup page on a phone), and keep the seating preview grid readable (distinct colors per class so a multi-class mix is easy to read).
+
+Build this end to end: Firebase project setup (Firestore + Storage + Auth), Express API routes for all CRUD + the room-strength upload/parse endpoint + the generate-seating endpoint, and the React pages above wired to that API.
