@@ -49899,7 +49899,7 @@ var db = drizzle(sqlite, { schema: schema_exports });
 // src/routes/exam.ts
 var router2 = (0, import_express2.Router)();
 var numberId = (value) => Number.parseInt(value, 10);
-var classLabel = (grade, section) => `${grade}${section}`;
+var classLabel = (grade, section) => `${grade}${section.includes(" ") ? ` ${section}` : section}`;
 function roomResponse(room) {
   return { ...room, type: room.type, updatedAt: room.updatedAt.toISOString() };
 }
@@ -50073,7 +50073,7 @@ router2.post("/classes/import/preview", async (req, res) => {
   parsed.data.rows.forEach((row, index) => {
     const key = `${row.grade}-${row.section.toUpperCase()}-${row.rollNo}`;
     if (row.grade < 1 || row.grade > 12) errors.push(`Row ${index + 1}: grade must be between 1 and 12.`);
-    if (!/^[A-Za-z0-9]+$/.test(row.section)) errors.push(`Row ${index + 1}: section must contain only letters or numbers.`);
+    if (!/^[A-Za-z0-9]+(?: [A-Za-z0-9]+)*$/.test(row.section)) errors.push(`Row ${index + 1}: section must contain only letters, numbers, and single spaces.`);
     if (row.rollNo < 1) errors.push(`Row ${index + 1}: roll number must be at least 1.`);
     if (seen.has(key)) errors.push(`Row ${index + 1}: duplicate roll number ${row.rollNo} in class ${row.grade}${row.section}.`);
     seen.add(key);
@@ -50091,7 +50091,7 @@ router2.post("/classes/import/confirm", async (req, res) => {
   parsed.data.rows.forEach((row, index) => {
     const key = `${row.grade}-${row.section.toUpperCase()}-${row.rollNo}`;
     if (row.grade < 1 || row.grade > 12) errors.push(`Row ${index + 1}: grade must be between 1 and 12.`);
-    if (!/^[A-Za-z0-9]+$/.test(row.section)) errors.push(`Row ${index + 1}: section must contain only letters or numbers.`);
+    if (!/^[A-Za-z0-9]+(?: [A-Za-z0-9]+)*$/.test(row.section)) errors.push(`Row ${index + 1}: section must contain only letters, numbers, and single spaces.`);
     if (row.rollNo < 1) errors.push(`Row ${index + 1}: roll number must be at least 1.`);
     if (seen.has(key)) errors.push(`Row ${index + 1}: duplicate roll number ${row.rollNo} in class ${row.grade}${row.section}.`);
     seen.add(key);
@@ -50100,22 +50100,22 @@ router2.post("/classes/import/confirm", async (req, res) => {
     res.status(400).json({ error: errors[0] });
     return;
   }
-  const result = await db.transaction(async (tx) => {
-    await tx.delete(studentsTable);
-    await tx.delete(classesTable);
+  const result = db.transaction((tx) => {
+    tx.delete(studentsTable).run();
+    tx.delete(classesTable).run();
     const classKeys = [...new Set(parsed.data.rows.map((row) => `${row.grade}-${row.section.toUpperCase()}`))];
     const classRows = classKeys.map((key) => {
       const [grade, section] = key.split("-");
       return { grade: Number(grade), section };
     });
-    const createdClasses = classRows.length ? await tx.insert(classesTable).values(classRows).returning() : [];
+    const createdClasses = classRows.length ? tx.insert(classesTable).values(classRows).returning().all() : [];
     const classMap = new Map(createdClasses.map((item) => [`${item.grade}-${item.section.toUpperCase()}`, item.id]));
     const studentRows = parsed.data.rows.map((row) => ({
       rollNo: row.rollNo,
       classId: classMap.get(`${row.grade}-${row.section.toUpperCase()}`),
       name: row.name?.trim() || null
     }));
-    const createdStudents = studentRows.length ? await tx.insert(studentsTable).values(studentRows).returning() : [];
+    const createdStudents = studentRows.length ? tx.insert(studentsTable).values(studentRows).returning().all() : [];
     return { classCount: createdClasses.length, studentCount: createdStudents.length };
   });
   res.status(201).json(result);

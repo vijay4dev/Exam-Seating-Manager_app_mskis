@@ -129,10 +129,6 @@ async function readCsvFile(file: File) {
   });
 }
 
-function normalizeCsvHeader(value: string) {
-  return value.toLowerCase().replace(/[\s_-]/g, "");
-}
-
 function romanGrade(value: string) {
   const numerals: Record<string, number> = { I: 1, V: 5, X: 10, L: 50 };
   const text = value.toUpperCase();
@@ -145,64 +141,110 @@ function romanGrade(value: string) {
   return total;
 }
 
-function classFromText(value: string) {
-  const match = value.match(
-    /(?:class\s*:\s*)?(\d{1,2}|[IVXL]+)\s*[-_ ]?\s*([A-Za-z0-9]+)/i,
-  );
-  if (!match) return null;
-  const grade = /^\d+$/.test(match[1])
-    ? Number(match[1])
-    : romanGrade(match[1]);
-  return grade >= 1 && grade <= 12 ? { grade, section: match[2] } : null;
+function normalizeSpreadsheetHeader(value: unknown) {
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-async function readRosterCsvFile(file: File) {
-  const lines = (await file.text())
-    .replace(/^\uFEFF/, "")
-    .split(/\r?\n/)
-    .filter((line) => line.trim());
-  if (lines.length < 2)
-    throw new Error(
-      `${file.name}: the file must include a header row and at least one data row.`,
-    );
-  const headerIndex = lines.findIndex((line) => {
-    const headers = splitCsvLine(line).map(normalizeCsvHeader);
-    return (
-      headers.includes("rollno") &&
-      (headers.includes("name") || headers.includes("studentname"))
-    );
-  });
-  if (headerIndex < 0)
-    throw new Error(
-      `${file.name}: could not find Roll No and Student Name columns.`,
-    );
-  const headers = splitCsvLine(lines[headerIndex]).map(normalizeCsvHeader);
-  const classLine = lines
-    .slice(0, headerIndex)
-    .find((line) => /\bclass\s*:/i.test(line));
-  const classInfo =
-    (classLine ? classFromText(classLine) : null) || classFromText(file.name);
-  if (!classInfo)
-    throw new Error(
-      `${file.name}: could not determine the class from the filename or file contents.`,
-    );
-  return lines
-    .slice(headerIndex + 1)
-    .map((line) => {
-      const values = splitCsvLine(line);
-      const row = Object.fromEntries(
-        headers.map((header, index) => [header, values[index] ?? ""]),
+function parseRosterClass(classValue: unknown, sectionValue: unknown) {
+  const text = String(classValue ?? "").trim();
+  const match = text.match(/^(?:class\s*)?(\d{1,2}|[IVXL]+)(?:(?:\s*[-/]\s*|\s+)(.+)|([A-Z0-9]+))?$/i);
+  if (!match) return null;
+  const grade = /^\d+$/.test(match[1]) ? Number(match[1]) : romanGrade(match[1]);
+  const explicitSection = String(sectionValue ?? "").trim();
+  const classQualifier = String(match[2] ?? match[3] ?? "")
+    .trim()
+    .replace(/[\s_-]+/g, " ");
+  const normalizedQualifier = classQualifier.toUpperCase();
+  const normalizedSection = explicitSection.toUpperCase();
+  const department = !explicitSection
+    ? classQualifier
+    : normalizedQualifier === normalizedSection
+      ? ""
+      : normalizedQualifier.endsWith(` ${normalizedSection}`)
+        ? classQualifier.slice(0, -explicitSection.length).trim()
+        : classQualifier;
+  const normalizedDepartment = department
+    .toLowerCase()
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+  const section = [normalizedDepartment, explicitSection.toUpperCase()]
+    .filter(Boolean)
+    .join(" ")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (grade < 1 || grade > 12 || !/^[A-Za-z0-9]+(?: [A-Za-z0-9]+)*$/.test(section)) return null;
+  return { grade, section };
+}
+
+async function readRosterExcelFile(file: File) {
+  const XLSX = await import("xlsx");
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", raw: false });
+  const rows: { grade: number; section: string; rollNo: number; name: string }[] = [];
+  const errors: string[] = [];
+  let foundHeader = false;
+
+  workbook.SheetNames.forEach((sheetName) => {
+    const sheetRows = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], {
+      header: 1,
+      raw: false,
+      defval: "",
+      blankrows: false,
+    });
+    const headerIndex = sheetRows.findIndex((row) => {
+      const headers = row.map(normalizeSpreadsheetHeader);
+      return (
+        headers.some((header) => ["rollno", "rollnumber"].includes(header)) &&
+        headers.some((header) => ["studentname", "name"].includes(header)) &&
+        headers.some((header) => ["class", "grade"].includes(header)) &&
+        headers.some((header) => ["sec", "section"].includes(header))
       );
-      const rollText = row.rollno || "";
-      const rollMatch = rollText.match(/\d+\s*$/);
-      return {
-        grade: classInfo.grade,
-        section: classInfo.section,
-        rollNo: rollMatch ? Number(rollMatch[0]) : Number(rollText),
-        name: (row.name || row.studentname || "").trim() || undefined,
-      };
-    })
-    .filter((row) => Number.isFinite(row.rollNo) && row.rollNo > 0 && row.name);
+    });
+    if (headerIndex < 0) return;
+    foundHeader = true;
+
+    const headers = sheetRows[headerIndex].map(normalizeSpreadsheetHeader);
+    const indexOf = (names: string[]) => headers.findIndex((header) => names.includes(header));
+    const snoIndex = indexOf(["sno", "serialno", "serialnumber"]);
+    const rollIndex = indexOf(["rollno", "rollnumber"]);
+    const nameIndex = indexOf(["studentname", "name"]);
+    const classIndex = indexOf(["class", "grade"]);
+    const sectionIndex = indexOf(["sec", "section"]);
+    let lastClass = "";
+    let lastSection = "";
+
+    sheetRows.slice(headerIndex + 1).forEach((row, rowIndex) => {
+      const rollText = String(row[rollIndex] ?? "").trim();
+      const name = String(row[nameIndex] ?? "").trim();
+      const classText = String(row[classIndex] ?? "").trim() || lastClass;
+      const sectionText = String(row[sectionIndex] ?? "").trim() || lastSection;
+      if (!rollText && !name && !classText && !sectionText) return;
+      if (classText) lastClass = classText;
+      if (sectionText) lastSection = sectionText;
+
+      const rowNumber = String(row[snoIndex] ?? rowIndex + 1).trim();
+      const classInfo = parseRosterClass(classText, sectionText);
+      const seniorRoll = rollText.match(/^(\d{1,2})([A-Z])\s*[- ]?\s*(\d+)$/i);
+      const standardRoll = rollText.match(/^(\d+)$/);
+      const rollNo = Number(seniorRoll?.[3] || standardRoll?.[1]);
+      if (!classInfo || !Number.isFinite(rollNo) || rollNo < 1 || !name) {
+        errors.push(`SNo ${rowNumber}: could not read a valid roll number, student name, class, or section.`);
+        return;
+      }
+      if (
+        seniorRoll &&
+        Number(seniorRoll[1]) !== classInfo.grade
+      ) {
+        errors.push(`SNo ${rowNumber}: roll number grade does not match class ${classInfo.grade}.`);
+        return;
+      }
+      rows.push({ ...classInfo, rollNo, name });
+    });
+  });
+
+  if (!foundHeader) {
+    errors.push("Could not find columns for Roll No, Student Name, Class, and Sec in this workbook.");
+  }
+  rows.sort((left, right) => left.grade - right.grade || left.section.localeCompare(right.section) || left.rollNo - right.rollNo);
+  return { rows, errors };
 }
 
 function Button({ children, variant = "dark", className = "", ...props }: any) {
@@ -1340,32 +1382,38 @@ function Rooms() {
   );
 }
 
-function RosterImportControl() {
+function RosterImportControl({ hasRoster, onRosterChanged }: any) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const preview = usePreviewRosterImport();
   const confirmImport = useConfirmRosterImport();
   const [open, setOpen] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<any>(null);
-  const [files, setFiles] = useState<File[]>([]);
   const parse = async () => {
-    if (!files.length) return;
+    if (!file) return;
     try {
-      const importedRows = await Promise.all(files.map(readRosterCsvFile));
-      const rows = importedRows.flat();
+      const parsed = await readRosterExcelFile(file);
+      const { rows } = parsed;
       if (!rows.length)
         throw new Error(
-          "No valid student rows were found in the selected files.",
+          parsed.errors[0] || "No student rows were found in this workbook.",
         );
       preview.mutate(
         {
           data: {
-            fileName: files.map((item) => item.name).join(", "),
+            fileName: file.name,
             rows,
-          } as any,
+          },
         },
-        { onSuccess: setPreviewData },
+        {
+          onSuccess: (result) =>
+            setPreviewData({
+              ...result,
+              errors: [...parsed.errors, ...result.errors],
+            }),
+        },
       );
     } catch (error: any) {
       setPreviewData({ rows: [], errors: [error.message] });
@@ -1373,138 +1421,32 @@ function RosterImportControl() {
   };
   const close = () => {
     setOpen(false);
-    setFiles([]);
+    setFile(null);
     setPreviewData(null);
   };
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
-        <FileSpreadsheet size={15} /> Upload roll list
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" onClick={() => setOpen(true)}>
+          <FileSpreadsheet size={15} /> Upload roster Excel
+        </Button>
+        {hasRoster && (
+          <Button variant="danger" onClick={() => setClearOpen(true)}>
+            <Trash2 size={15} /> Remove current roster
+          </Button>
+        )}
+      </div>
       {open && (
-        <Modal title="Upload roll-number list" onClose={close} wide>
+        <Modal title="Upload student roster Excel" onClose={close} wide>
           <div className="mb-4 rounded-lg bg-secondary p-3 text-xs text-muted-foreground">
-            <span className="font-bold text-foreground">CSV format:</span> one
-            class per file, with Roll No and Student Name columns. The class is
-            read from the filename or a Class row.
+            The workbook should contain SNo, Roll No, Student Name, Class, and
+            Sec columns. Students will be grouped by class and section.
           </div>
           {!previewData ? (
             <>
               <input
                 type="file"
-                multiple
-                accept=".csv,text/csv"
-                onChange={(e: any) => {
-                  setFiles(Array.from(e.target.files || []));
-                  setPreviewData(null);
-                }}
-                className="block w-full rounded-lg border border-dashed border-input bg-background p-4 text-sm"
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                {files.length
-                  ? `${files.length} class file${files.length === 1 ? "" : "s"} selected.`
-                  : "Select one or more class CSV files."}
-              </p>
-              <Button
-                className="mt-4 w-full"
-                variant="yellow"
-                onClick={parse}
-                disabled={!files.length || preview.isPending}
-              >
-                {preview.isPending ? (
-                  <Loader2 className="animate-spin" size={15} />
-                ) : (
-                  <FileSpreadsheet size={15} />
-                )}{" "}
-                Preview files
-              </Button>
-            </>
-          ) : (
-            <>
-              <div className="mb-3 flex items-center justify-between">
-                <div className="text-sm font-bold">
-                  {previewData.rows?.length || 0} rows ready
-                </div>
-                {previewData.errors?.length > 0 && (
-                  <Status tone="red">{previewData.errors.length} errors</Status>
-                )}
-              </div>
-              <div className="max-h-56 overflow-auto rounded-lg border border-border">
-                <table className="w-full text-left text-xs">
-                  <tbody>
-                    {previewData.rows
-                      ?.slice(0, 100)
-                      .map((row: any, i: number) => (
-                        <tr
-                          key={i}
-                          className="border-b border-border last:border-0"
-                        >
-                          <td className="px-3 py-2 font-bold">
-                            {row.grade}
-                            {row.section}
-                          </td>
-                          <td className="px-3 py-2 font-mono">{row.rollNo}</td>
-                          <td className="px-3 py-2">{row.name || "—"}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setPreviewData(null)}
-                >
-                  Back
-                </Button>
-                <Button
-                  variant="yellow"
-                  className="flex-1"
-                  onClick={() =>
-                    confirmImport.mutate(
-                      { data: { rows: previewData.rows } },
-                      {
-                        onSuccess: () => {
-                          queryClient.invalidateQueries({
-                            queryKey: getListClassesQueryKey(),
-                          });
-                          close();
-                          toast({
-                            title: "Import successful",
-                            description: `${files.length} file${files.length === 1 ? "" : "s"} imported successfully.`,
-                          });
-                        },
-                      },
-                    )
-                  }
-                  disabled={confirmImport.isPending}
-                >
-                  <Check size={15} /> Confirm import
-                </Button>
-              </div>
-            </>
-          )}
-        </Modal>
-      )}
-    </>
-  );
-  return (
-    <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
-        <FileSpreadsheet size={15} /> Upload roll list
-      </Button>
-      {open && (
-        <Modal title="Upload roll-number list" onClose={close} wide>
-          <div className="mb-4 rounded-lg bg-secondary p-3 text-xs text-muted-foreground">
-            <span className="font-bold text-foreground">CSV columns:</span>{" "}
-            grade,section,rollNo,name
-          </div>
-          {!previewData ? (
-            <>
-              <input
-                type="file"
-                accept=".csv,text/csv"
+                accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={(e: any) => {
                   setFile(e.target.files?.[0] || null);
                   setPreviewData(null);
@@ -1512,7 +1454,7 @@ function RosterImportControl() {
                 className="block w-full rounded-lg border border-dashed border-input bg-background p-4 text-sm"
               />
               <p className="mt-2 text-xs text-muted-foreground">
-                Uploading a file replaces the current classes and roll numbers.
+                {file?.name || "Select one Excel workbook containing the full roster."}
               </p>
               <Button
                 className="mt-4 w-full"
@@ -1525,7 +1467,7 @@ function RosterImportControl() {
                 ) : (
                   <FileSpreadsheet size={15} />
                 )}{" "}
-                Preview file
+                Preview roster
               </Button>
             </>
           ) : (
@@ -1538,6 +1480,16 @@ function RosterImportControl() {
                   <Status tone="red">{previewData.errors.length} errors</Status>
                 )}
               </div>
+              {!!previewData.errors?.length && (
+                <div className="mb-3 max-h-24 overflow-auto rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                  {previewData.errors.slice(0, 8).map((error: string, index: number) => (
+                    <div key={index}>{error}</div>
+                  ))}
+                  {previewData.errors.length > 8 && (
+                    <div>And {previewData.errors.length - 8} more errors.</div>
+                  )}
+                </div>
+              )}
               <div className="max-h-56 overflow-auto rounded-lg border border-border">
                 <table className="w-full text-left text-xs">
                   <tbody>
@@ -1549,8 +1501,7 @@ function RosterImportControl() {
                           className="border-b border-border last:border-0"
                         >
                           <td className="px-3 py-2 font-bold">
-                            {row.grade}
-                            {row.section}
+                            Class {row.grade} {row.section}
                           </td>
                           <td className="px-3 py-2 font-mono">{row.rollNo}</td>
                           <td className="px-3 py-2">{row.name || "—"}</td>
@@ -1574,24 +1525,86 @@ function RosterImportControl() {
                     confirmImport.mutate(
                       { data: { rows: previewData.rows } },
                       {
-                        onSuccess: () => {
-                          queryClient.invalidateQueries({
+                        onSuccess: async () => {
+                          close();
+                          onRosterChanged?.();
+                          await queryClient.invalidateQueries({
                             queryKey: getListClassesQueryKey(),
                           });
-                          close();
+                          toast({
+                            title: "Import successful",
+                            description: `${previewData.rows.length} students imported across ${new Set(previewData.rows.map((row: any) => `${row.grade}${row.section}`)).size} classes.`,
+                          });
                         },
+                        onError: (error: any) =>
+                          toast({
+                            title: "Roster import failed",
+                            description: error.message || "The roster could not be saved.",
+                            variant: "destructive",
+                          }),
                       },
                     )
                   }
-                  disabled={
-                    confirmImport.isPending || !!previewData.errors?.length
-                  }
+                  disabled={confirmImport.isPending || !!previewData.errors?.length}
                 >
                   <Check size={15} /> Replace roster
                 </Button>
               </div>
             </>
           )}
+        </Modal>
+      )}
+      {clearOpen && (
+        <Modal title="Remove current roster?" onClose={() => setClearOpen(false)}>
+          <p className="text-sm text-muted-foreground">
+            This permanently removes all imported classes and students. Seating groups that use these classes will need to be set up again.
+          </p>
+          <div className="mt-5 flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setClearOpen(false)}
+              disabled={confirmImport.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              className="flex-1"
+              disabled={confirmImport.isPending}
+              onClick={() =>
+                confirmImport.mutate(
+                  { data: { rows: [] } },
+                  {
+                    onSuccess: async () => {
+                      setClearOpen(false);
+                      onRosterChanged?.();
+                      await queryClient.invalidateQueries({
+                        queryKey: getListClassesQueryKey(),
+                      });
+                      toast({
+                        title: "Roster removed",
+                        description: "All imported classes and students were removed.",
+                      });
+                    },
+                    onError: (error: any) =>
+                      toast({
+                        title: "Could not remove roster",
+                        description: error.message || "The roster could not be removed.",
+                        variant: "destructive",
+                      }),
+                  },
+                )
+              }
+            >
+              {confirmImport.isPending ? (
+                <Loader2 className="animate-spin" size={15} />
+              ) : (
+                <Trash2 size={15} />
+              )}
+              Remove roster
+            </Button>
+          </div>
         </Modal>
       )}
     </>
@@ -1614,8 +1627,13 @@ function Classes() {
       <PageHeader
         eyebrow="Workspace / people"
         title="Classes & students"
-        copy="Upload the roll-number list that defines classes, sections, and students."
-        action={<RosterImportControl />}
+        copy="Upload an Excel roster to define classes, sections, and students."
+        action={
+          <RosterImportControl
+            hasRoster={!!q.data?.length}
+            onRosterChanged={() => setSelected(null)}
+          />
+        }
       />
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
         <Card className="overflow-hidden">
@@ -1647,7 +1665,7 @@ function Classes() {
             <Empty
               icon={BookOpen}
               title="No classes found"
-              copy="Upload a roll-number CSV file to create the class register."
+              copy="Upload a roster Excel workbook to create the class register."
             />
           ) : (
             <div className="p-2">
@@ -1676,7 +1694,7 @@ function Classes() {
             </div>
           )}
         </Card>
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden" style={{ height: "-webkit-fit-content" }}>
           {selected ? (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
