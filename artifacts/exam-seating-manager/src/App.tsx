@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   QueryClient,
   QueryClientProvider,
+  useQueries,
   useQueryClient,
 } from "@tanstack/react-query";
 import { Link, Route, Switch, useLocation, useParams } from "wouter";
@@ -41,13 +42,13 @@ import {
   getGetDashboardQueryKey,
   getGetSessionAssignmentsQueryKey,
   getGetSessionQueryKey,
+  getSessionAssignments,
   getListClassesQueryKey,
   getListRoomsQueryKey,
   getListSessionsQueryKey,
   getListStudentsQueryKey,
   getListEligibleStudentsQueryKey,
   getLookupRoomQueryKey,
-  getLookupStudentQueryKey,
   useConfirmRoomImport,
   useCreateRoom,
   useCreateSeatingGroup,
@@ -69,7 +70,6 @@ import {
   useListSessions,
   useListStudents,
   useLookupRoom,
-  useLookupStudent,
   usePreviewRoomImport,
   usePreviewRosterImport,
   useConfirmRosterImport,
@@ -2732,30 +2732,169 @@ function SwapWatcher({ selected, assignments, onSwap }: any) {
   ) : null;
 }
 
+function ConsolidatedData({ classes, rooms }: any) {
+  const sessions = useListSessions();
+  const [studentName, setStudentName] = useState("");
+  const [selectedRoomId, setSelectedRoomId] = useState("");
+  const [selectedClassId, setSelectedClassId] = useState("");
+  const sessionList = sessions.data ?? [];
+  const assignmentQueries = useQueries({
+    queries: sessionList.map((session: any) => ({
+      queryKey: getGetSessionAssignmentsQueryKey(session.id),
+      queryFn: () => getSessionAssignments(session.id),
+    })),
+  });
+  const assignments = assignmentQueries.flatMap((query, index) =>
+    (query.data ?? []).map((assignment: any) => ({
+      ...assignment,
+      sessionName: sessionList[index].name,
+    })),
+  );
+  const search = studentName.trim();
+  const normalizedSearch = search.toLocaleLowerCase();
+  const rollSearch = /^\d+$/.test(search);
+  const hasFilters = !!search || !!selectedRoomId || !!selectedClassId;
+  const filteredAssignments = (hasFilters
+    ? assignments.filter((assignment: any) => {
+        const matchesSearch = !search || (rollSearch
+          ? String(assignment.rollNo) === search
+          : String(assignment.studentName ?? "")
+              .toLocaleLowerCase()
+              .includes(normalizedSearch));
+        const matchesRoom = !selectedRoomId || assignment.roomId === selectedRoomId;
+        const matchesClass = !selectedClassId || assignment.classId === selectedClassId;
+        return matchesSearch && matchesRoom && matchesClass;
+      })
+    : [])
+    .sort(
+      (left: any, right: any) =>
+        String(left.studentName ?? "").localeCompare(String(right.studentName ?? "")) ||
+        left.sessionName.localeCompare(right.sessionName),
+    );
+  const assignedStudents = new Set(filteredAssignments.map((assignment: any) => assignment.studentId));
+  const matchingSessions = new Set(filteredAssignments.map((assignment: any) => assignment.sessionName));
+  const isLoading = sessions.isLoading || assignmentQueries.some((query) => query.isLoading);
+  const isError = sessions.isError || assignmentQueries.some((query) => query.isError);
+
+  return (
+    <div>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 className="font-extrabold">Consolidated seating data</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Search by name or roll number, or filter by room and class.
+          </p>
+        </div>
+      </div>
+      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <SelectField
+          label="Room"
+          value={selectedRoomId}
+          onChange={(event: any) => setSelectedRoomId(event.target.value)}
+        >
+          <option value="">All rooms</option>
+          {rooms.map((room: any) => (
+            <option key={room.id} value={String(room.id)}>{room.name}</option>
+          ))}
+        </SelectField>
+        <SelectField
+          label="Class"
+          value={selectedClassId}
+          onChange={(event: any) => setSelectedClassId(event.target.value)}
+        >
+          <option value="">All classes</option>
+          {classes.map((item: any) => (
+            <option key={item.id} value={String(item.id)}>{item.label}</option>
+          ))}
+        </SelectField>
+        <div className="relative self-end">
+        <Search
+          size={14}
+          className="absolute left-3 top-2.5 text-muted-foreground"
+        />
+        <input
+          aria-label="Search student by name or roll number"
+          className="h-9 w-full rounded-lg border border-input bg-background pl-8 pr-3 text-xs outline-none focus:border-primary"
+          placeholder="Student name or roll number"
+          type="search"
+          value={studentName}
+          onChange={(event) => setStudentName(event.target.value)}
+        />
+        </div>
+      </div>
+      {hasFilters && !isLoading && !isError && (
+        <div className="mb-4 flex flex-wrap gap-5 font-mono text-xs text-muted-foreground">
+          <span>{matchingSessions.size} sessions</span>
+          <span>{assignedStudents.size} students</span>
+          <span>{filteredAssignments.length} seat records</span>
+        </div>
+      )}
+      {isError ? (
+        <ErrorState retry={() => sessions.refetch()} />
+      ) : !hasFilters ? (
+        <Empty
+          icon={Search}
+          title="Find seating records"
+          copy="Enter a student name or roll number, or choose a room or class."
+        />
+      ) : isLoading ? (
+          <div className="space-y-2 p-5">
+            {[1, 2, 3, 4].map((row) => <Skeleton key={row} className="h-12" />)}
+          </div>
+        ) : !filteredAssignments.length ? (
+          <Empty
+            icon={Search}
+            title="No matching seating records"
+            copy="Adjust the name, roll number, room, or class filters and try again."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-secondary/55 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-5 py-3">Student</th>
+                  <th className="px-5 py-3">Roll no.</th>
+                  <th className="px-5 py-3">Class</th>
+                  <th className="px-5 py-3">Exam session</th>
+                  <th className="px-5 py-3">Room</th>
+                  <th className="px-5 py-3">Column</th>
+                  <th className="px-5 py-3">Row</th>
+                  <th className="px-5 py-3">Seat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAssignments.map((assignment: any) => (
+                  <tr key={`${assignment.sessionId}-${assignment.id}`} className="border-t border-border/70">
+                    <td className="px-5 py-3 font-bold">{assignment.studentName || "—"}</td>
+                    <td className="px-5 py-3 font-mono">{assignment.rollNo}</td>
+                    <td className="px-5 py-3">{assignment.classLabel}</td>
+                    <td className="px-5 py-3">{assignment.sessionName}</td>
+                    <td className="px-5 py-3">{assignment.roomName}</td>
+                    <td className="px-5 py-3 font-mono">{assignment.columnNo}</td>
+                    <td className="px-5 py-3 font-mono">{assignment.benchNo}</td>
+                    <td className="px-5 py-3 font-mono">{assignment.seatNo}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+    </div>
+  );
+}
+
 function Lookup() {
   const classes = useListClasses();
   const rooms = useListRooms();
   const sessions = useListSessions();
-  const [tab, setTab] = useState<"student" | "room">("student");
-  const [studentParams, setStudentParams] = useState<any>(null);
+  const [tab, setTab] = useState<"room" | "consolidated">("consolidated");
   const [roomParams, setRoomParams] = useState<any>(null);
-  const student = useLookupStudent(
-    studentParams || { rollNo: 0, classId: "", sessionId: "" },
-    {
-      query: {
-        enabled: !!studentParams,
-        queryKey: getLookupStudentQueryKey(studentParams || undefined),
-      },
-    },
-  );
   const room = useLookupRoom(roomParams || { roomId: "", sessionId: "" }, {
     query: {
       enabled: !!roomParams,
       queryKey: getLookupRoomQueryKey(roomParams || undefined),
     },
   });
-  const [roll, setRoll] = useState("");
-  const [classId, setClassId] = useState("");
   const [roomId, setRoomId] = useState("");
   const [sessionId, setSessionId] = useState("");
   return (
@@ -2775,15 +2914,8 @@ function Lookup() {
           needed.
         </p>
       </div>
-      <Card className="mx-auto max-w-3xl overflow-hidden">
+      <Card className={`mx-auto overflow-hidden ${tab === "consolidated" ? "max-w-5xl" : "max-w-3xl"}`}>
         <div className="grid grid-cols-2 border-b border-border">
-          <button
-            className={`px-5 py-4 text-sm font-extrabold ${tab === "student" ? "border-b-2 border-primary bg-secondary/40" : "text-muted-foreground"}`}
-            onClick={() => setTab("student")}
-            data-testid="button-lookup-student"
-          >
-            Find a student
-          </button>
           <button
             className={`px-5 py-4 text-sm font-extrabold ${tab === "room" ? "border-b-2 border-primary bg-secondary/40" : "text-muted-foreground"}`}
             onClick={() => setTab("room")}
@@ -2791,60 +2923,16 @@ function Lookup() {
           >
             View room chart
           </button>
+          <button
+            className={`px-3 py-4 text-sm font-extrabold ${tab === "consolidated" ? "border-b-2 border-primary bg-secondary/40" : "text-muted-foreground"}`}
+            onClick={() => setTab("consolidated")}
+            data-testid="button-lookup-consolidated"
+          >
+            Consolidated data
+          </button>
         </div>
         <div className="p-5 sm:p-7">
-          {tab === "student" ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setStudentParams({ rollNo: Number(roll), classId, sessionId });
-              }}
-              className="grid gap-3 sm:grid-cols-[1fr_1.4fr_1.4fr_auto] sm:items-end"
-            >
-              <Field
-                label="Roll number"
-                type="number"
-                min="1"
-                required
-                value={roll}
-                onChange={(e: any) => setRoll(e.target.value)}
-                placeholder="e.g. 18"
-              />
-              <SelectField
-                label="Class"
-                required
-                value={classId}
-                onChange={(e: any) => setClassId(e.target.value)}
-              >
-                <option value="">Choose class</option>
-                {classes.data?.map((c: any) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </SelectField>
-              <SelectField
-                label="Exam session"
-                required
-                value={sessionId}
-                onChange={(e: any) => setSessionId(e.target.value)}
-              >
-                <option value="">Choose session</option>
-                {sessions.data?.map((s: any) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </SelectField>
-              <Button
-                className="h-10"
-                variant="yellow"
-                disabled={student.isFetching}
-              >
-                <Search size={15} /> Find seat
-              </Button>
-            </form>
-          ) : (
+          {tab === "room" ? (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -2886,15 +2974,10 @@ function Lookup() {
                 <Grid2X2 size={15} /> Show chart
               </Button>
             </form>
+          ) : (
+            <ConsolidatedData classes={classes.data ?? []} rooms={rooms.data ?? []} />
           )}
-          {studentParams && (
-            <LookupResult
-              data={student.data}
-              loading={student.isFetching}
-              error={student.isError}
-            />
-          )}
-          {roomParams && (
+          {tab === "room" && roomParams && (
             <RoomResult
               data={room.data}
               loading={room.isFetching}
@@ -2903,40 +2986,6 @@ function Lookup() {
           )}
         </div>
       </Card>
-    </div>
-  );
-}
-function LookupResult({ data, loading, error }: any) {
-  return (
-    <div className="mt-7 border-t border-dashed border-border pt-6">
-      {loading ? (
-        <Skeleton className="h-28" />
-      ) : error ? (
-        <ErrorState />
-      ) : data ? (
-        <div className="rounded-xl border border-accent/50 bg-accent/15 p-5 text-center">
-          <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            Seat located
-          </div>
-          <div className="mt-2 text-xl font-extrabold">{data.roomName}</div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            {data.classLabel} · Roll {data.rollNo}
-          </div>
-          <div className="mx-auto mt-5 flex max-w-sm items-center justify-center gap-2">
-            <span className="rounded-lg bg-primary px-4 py-3 font-mono text-sm text-primary-foreground">
-              Column {data.columnNo}
-            </span>
-            <span className="text-muted-foreground">/</span>
-            <span className="rounded-lg bg-primary px-4 py-3 font-mono text-sm text-primary-foreground">
-              Bench {data.benchNo}
-            </span>
-            <span className="text-muted-foreground">/</span>
-            <span className="rounded-lg bg-primary px-4 py-3 font-mono text-sm text-primary-foreground">
-              Seat {data.seatNo}
-            </span>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
