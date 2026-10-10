@@ -94,6 +94,7 @@ async function assignmentResponses(sessionId: number, roomId?: number) {
 
 function validateRoom(data: { type: string; capacity: number; benches: number; columns: number; seatsPerBench: number }) {
   if (data.columns < 1 || data.capacity < 1 || data.benches < 1 || ![1, 2].includes(data.seatsPerBench)) return "Columns, capacity, and benches must be positive; seats per bench must be 1 or 2.";
+  if (data.capacity > calculatedRoomCapacity(data)) return `Room capacity cannot exceed its layout maximum of ${calculatedRoomCapacity(data)}.`;
   if (data.type === "classroom" && (data.capacity < 25 || data.capacity > 50)) return "Classroom capacity must be between 25 and 50.";
   return null;
 }
@@ -137,7 +138,6 @@ router.post("/rooms", async (req, res): Promise<void> => {
   if (duplicate.length) { res.status(409).json({ error: "A room with this serial number or name already exists." }); return; }
   const [room] = await db.insert(roomsTable).values({
     ...parsed.data,
-    capacity: calculatedRoomCapacity(parsed.data),
   }).returning();
   res.status(201).json(roomResponse(room));
 });
@@ -149,10 +149,9 @@ router.patch("/rooms/:roomId", async (req, res): Promise<void> => {
   const current = await db.select().from(roomsTable).where(eq(roomsTable.id, numberId(params.data.roomId)));
   if (!current[0]) { res.status(404).json({ error: "Room not found" }); return; }
   const merged = { ...current[0], ...body.data };
-  merged.capacity = calculatedRoomCapacity(merged);
   const validationError = validateRoom(merged);
   if (validationError) { res.status(400).json({ error: validationError }); return; }
-  const [room] = await db.update(roomsTable).set({ ...body.data, capacity: merged.capacity, updatedAt: new Date() }).where(eq(roomsTable.id, numberId(params.data.roomId))).returning();
+  const [room] = await db.update(roomsTable).set({ ...body.data, updatedAt: new Date() }).where(eq(roomsTable.id, numberId(params.data.roomId))).returning();
   res.json(roomResponse(room));
 });
 
@@ -166,7 +165,7 @@ router.delete("/rooms/:roomId", async (req, res): Promise<void> => {
 router.post("/rooms/import/preview", async (req, res): Promise<void> => {
   const parsed = PreviewRoomImportBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const rows = parsed.data.rows.map((row) => ({ ...row, capacity: calculatedRoomCapacity(row) }));
+  const rows = parsed.data.rows;
   const errors: string[] = [];
   rows.forEach((row, index) => {
     const error = validateRoom(row);
@@ -178,7 +177,7 @@ router.post("/rooms/import/preview", async (req, res): Promise<void> => {
 router.post("/rooms/import/confirm", async (req, res): Promise<void> => {
   const parsed = ConfirmRoomImportBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const rows = parsed.data.rows.map((row) => ({ ...row, capacity: calculatedRoomCapacity(row) }));
+  const rows = parsed.data.rows;
   const errors = rows.map(validateRoom).filter(Boolean);
   if (errors.length) { res.status(400).json({ error: errors[0] }); return; }
   const imported = await db.transaction(async (tx) => {
@@ -410,10 +409,10 @@ router.post("/sessions/:sessionId/generate", async (req, res): Promise<void> => 
           }
         }
       }
-      for (let seatIndex = 0; seatIndex < seats.length; seatIndex += room.seatsPerBench) {
+      for (let seatIndex = 0; seatIndex < Math.min(seats.length, room.capacity); seatIndex += room.seatsPerBench) {
         const remainingStudents = [...studentsByClass.values()].reduce((total, students) => total + students.length, 0);
         if (remainingStudents < room.seatsPerBench) break;
-        for (const seat of seats.slice(seatIndex, seatIndex + room.seatsPerBench)) {
+        for (const seat of seats.slice(seatIndex, Math.min(seatIndex + room.seatsPerBench, room.capacity))) {
         let chosenClassId: number | undefined;
         for (let attempt = 0; attempt < rotation.length; attempt += 1) {
           const candidate = rotation[(rotationPointer + attempt) % rotation.length];

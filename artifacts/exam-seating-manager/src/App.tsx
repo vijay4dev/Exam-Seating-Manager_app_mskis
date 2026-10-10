@@ -872,19 +872,33 @@ function Rooms() {
     sno: "",
     classId: "",
     type: "classroom",
+    capacity: "0",
     benches: "",
     columns: "3",
     seatsPerBench: "2",
   });
   const [roomFile, setRoomFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<any>(null);
+  const updateLayoutField = (setter: any, field: string, value: string) => {
+    setter((current: any) => {
+      const next = { ...current, [field]: value };
+      next.capacity = String(
+        roomCapacity(
+          Number(next.benches),
+          Number(next.columns),
+          Number(next.seatsPerBench),
+        ),
+      );
+      return next;
+    });
+  };
   const save = (e: any) => {
     e.preventDefault();
     if (!editing) return;
     const payload = {
       ...form,
       sno: Number(form.sno),
-      capacity: roomCapacity(Number(form.benches), Number(form.columns), Number(form.seatsPerBench)),
+      capacity: Number(form.capacity),
       benches: Number(form.benches),
       columns: Number(form.columns),
       seatsPerBench: Number(form.seatsPerBench) as 1 | 2,
@@ -910,7 +924,7 @@ function Rooms() {
           ...createForm,
           sno: Number(createForm.sno),
           name: selectedClass.label,
-          capacity: roomCapacity(Number(createForm.benches), Number(createForm.columns), Number(createForm.seatsPerBench)),
+          capacity: Number(createForm.capacity),
           benches: Number(createForm.benches),
           columns: Number(createForm.columns),
           seatsPerBench: Number(createForm.seatsPerBench) as 1 | 2,
@@ -924,6 +938,7 @@ function Rooms() {
             sno: "",
             classId: "",
             type: "classroom",
+            capacity: "0",
             benches: "",
             columns: "3",
             seatsPerBench: "2",
@@ -940,7 +955,7 @@ function Rooms() {
   };
   const openEdit = (r: any) => {
     setEditing(r);
-    setForm(r);
+    setForm({ ...r, capacity: String(r.capacity) });
     setModal("room");
   };
   const parseImport = async () => {
@@ -950,15 +965,25 @@ function Rooms() {
       const rows = sourceRows.map((row: any, index: number) => {
         const columns = Number(row.columns) || 3;
         const seatsPerBench = Number(row.seatsperbench) === 1 ? 1 : 2;
-        const capacity = Number(row.capacity);
+        const requestedCapacity = Number(row.capacity);
+        const benches =
+          Number(row.benches) ||
+          Math.max(
+            1,
+            Math.ceil(
+              (Number.isFinite(requestedCapacity) ? requestedCapacity : 0) /
+                (columns * seatsPerBench),
+            ),
+          );
         return {
           sno: Number(row.sno) || index + 1,
           name: row.name,
           type: row.type === "hall" ? "hall" : "classroom",
-          capacity,
-          benches:
-            Number(row.benches) ||
-            Math.max(1, Math.ceil(capacity / (columns * seatsPerBench))),
+          capacity:
+            Number.isFinite(requestedCapacity) && requestedCapacity > 0
+              ? requestedCapacity
+              : roomCapacity(benches, columns, seatsPerBench),
+          benches,
           columns,
           seatsPerBench,
         };
@@ -1134,12 +1159,21 @@ function Rooms() {
                 required
                 value={form.benches}
                 onChange={(e: any) =>
-                  setForm({ ...form, benches: e.target.value })
+                  updateLayoutField(setForm, "benches", e.target.value)
                 }
+              />
+              <Field
+                label="Total room capacity"
+                type="number"
+                min="1"
+                max={roomCapacity(Number(form.benches), Number(form.columns), Number(form.seatsPerBench))}
+                required
+                value={form.capacity}
+                onChange={(e: any) => setForm({ ...form, capacity: e.target.value })}
               />
             </div>
             <div className="rounded-lg border border-dashed border-border bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
-              <span className="block text-[10px] font-extrabold uppercase tracking-wider">Calculated capacity</span>
+              <span className="block text-[10px] font-extrabold uppercase tracking-wider">Layout maximum</span>
               <span className="font-mono text-sm text-foreground">
                 {roomCapacity(Number(form.benches), Number(form.columns), Number(form.seatsPerBench))} seats
               </span>
@@ -1152,14 +1186,14 @@ function Rooms() {
                 required
                 value={form.columns}
                 onChange={(e: any) =>
-                  setForm({ ...form, columns: e.target.value })
+                  updateLayoutField(setForm, "columns", e.target.value)
                 }
               />
               <SelectField
                 label="Seats/bench"
                 value={form.seatsPerBench}
                 onChange={(e: any) =>
-                  setForm({ ...form, seatsPerBench: e.target.value })
+                  updateLayoutField(setForm, "seatsPerBench", e.target.value)
                 }
               >
                 <option value="1">1</option>
@@ -1202,6 +1236,11 @@ function Rooms() {
                     ...createForm,
                     classId,
                     benches: String(derivedRoomRows(studentCount, Number(createForm.columns), Number(createForm.seatsPerBench))),
+                    capacity: String(roomCapacity(
+                      derivedRoomRows(studentCount, Number(createForm.columns), Number(createForm.seatsPerBench)),
+                      Number(createForm.columns),
+                      Number(createForm.seatsPerBench),
+                    )),
                   });
                 }}
               >
@@ -1214,8 +1253,17 @@ function Rooms() {
               </SelectField>
             </div>
             <div className="grid grid-cols-2 gap-3">
+              <Field
+                label="Total room capacity"
+                type="number"
+                min="1"
+                max={roomCapacity(Number(createForm.benches), Number(createForm.columns), Number(createForm.seatsPerBench))}
+                required
+                value={createForm.capacity}
+                onChange={(e: any) => setCreateForm({ ...createForm, capacity: e.target.value })}
+              />
               <div className="rounded-lg border border-dashed border-border bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
-                <span className="block text-[10px] font-extrabold uppercase tracking-wider">Calculated capacity</span>
+                <span className="block text-[10px] font-extrabold uppercase tracking-wider">Layout maximum</span>
                 <span className="font-mono text-sm text-foreground">
                   {roomCapacity(Number(createForm.benches), Number(createForm.columns), Number(createForm.seatsPerBench)) || "—"} seats
                 </span>
@@ -1229,7 +1277,7 @@ function Rooms() {
                 required
                 value={createForm.benches}
                 onChange={(e: any) =>
-                  setCreateForm({ ...createForm, benches: e.target.value })
+                  updateLayoutField(setCreateForm, "benches", e.target.value)
                 }
               />
               <Field
@@ -1239,17 +1287,14 @@ function Rooms() {
                 required
                 value={createForm.columns}
                 onChange={(e: any) =>
-                  setCreateForm({ ...createForm, columns: e.target.value })
+                  updateLayoutField(setCreateForm, "columns", e.target.value)
                 }
               />
               <SelectField
                 label="Seats per bench"
                 value={createForm.seatsPerBench}
                 onChange={(e: any) =>
-                  setCreateForm({
-                    ...createForm,
-                    seatsPerBench: e.target.value,
-                  })
+                  updateLayoutField(setCreateForm, "seatsPerBench", e.target.value)
                 }
               >
                 <option value="1">1 seat</option>
@@ -1613,6 +1658,10 @@ function RosterImportControl({ hasRoster, onRosterChanged }: any) {
 
 function Classes() {
   const q = useListClasses();
+  const totalStudents = q.data?.reduce(
+    (total: number, item: any) => total + item.studentCount,
+    0,
+  );
   const [selected, setSelected] = useState<any>(null);
   const students = useListStudents(selected?.id || "", {
     query: {
@@ -1626,7 +1675,16 @@ function Classes() {
     <div className="stagger">
       <PageHeader
         eyebrow="Workspace / people"
-        title="Classes & students"
+        title={
+          <>
+            Classes & students
+            {totalStudents != null && (
+              <span className="ml-2 inline-block whitespace-nowrap align-baseline text-sm font-bold text-muted-foreground">
+                · {totalStudents} students
+              </span>
+            )}
+          </>
+        }
         copy="Upload an Excel roster to define classes, sections, and students."
         action={
           <RosterImportControl
