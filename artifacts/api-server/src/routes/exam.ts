@@ -411,11 +411,14 @@ router.post("/sessions/:sessionId/generate", async (req, res): Promise<void> => 
       }
       for (let seatIndex = 0; seatIndex < Math.min(seats.length, room.capacity); seatIndex += room.seatsPerBench) {
         const remainingStudents = [...studentsByClass.values()].reduce((total, students) => total + students.length, 0);
-        if (remainingStudents < room.seatsPerBench) break;
+        if (remainingStudents === 0) break;
         for (const seat of seats.slice(seatIndex, Math.min(seatIndex + room.seatsPerBench, room.capacity))) {
         let chosenClassId: number | undefined;
+        const preferredIndex = room.seatsPerBench === 1
+          ? (seat.columnNo - 1) % rotation.length
+          : rotationPointer;
         for (let attempt = 0; attempt < rotation.length; attempt += 1) {
-          const candidate = rotation[(rotationPointer + attempt) % rotation.length];
+          const candidate = rotation[(preferredIndex + attempt) % rotation.length];
           if ((studentsByClass.get(candidate)?.length ?? 0) > 0) {
             chosenClassId = candidate;
             if (room.seatsPerBench > 1) {
@@ -427,12 +430,6 @@ router.post("/sessions/:sessionId/generate", async (req, res): Promise<void> => 
         if (chosenClassId == null) break;
         const student = studentsByClass.get(chosenClassId)?.shift();
         if (!student) break;
-        if (
-          room.seatsPerBench === 1 &&
-          studentsByClass.get(chosenClassId)?.length === 0
-        ) {
-          rotationPointer = (rotation.indexOf(chosenClassId) + 1) % rotation.length;
-        }
         assignedStudentIds.add(student.id);
         await db.insert(seatAssignmentsTable).values({
           sessionId, roomId: room.id, columnNo: seat.columnNo, benchNo: seat.benchNo, seatNo: seat.seatNo,
