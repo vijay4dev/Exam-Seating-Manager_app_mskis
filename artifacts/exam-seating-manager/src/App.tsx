@@ -892,6 +892,33 @@ function Rooms() {
       return next;
     });
   };
+  const updateCreateLayoutField = (field: string, value: string) => {
+    const studentCount =
+      classes.data?.find((item: any) => item.id === createForm.classId)
+        ?.studentCount || 0;
+    setCreateForm((current: any) => {
+      const next = { ...current, [field]: value };
+      if (studentCount > 0 && (field === "columns" || field === "seatsPerBench")) {
+        next.benches = String(
+          derivedRoomRows(
+            studentCount,
+            Number(next.columns),
+            Number(next.seatsPerBench),
+          ),
+        );
+        next.capacity = String(studentCount);
+      } else {
+        next.capacity = String(
+          roomCapacity(
+            Number(next.benches),
+            Number(next.columns),
+            Number(next.seatsPerBench),
+          ),
+        );
+      }
+      return next;
+    });
+  };
   const save = (e: any) => {
     e.preventDefault();
     if (!editing) return;
@@ -1236,11 +1263,7 @@ function Rooms() {
                     ...createForm,
                     classId,
                     benches: String(derivedRoomRows(studentCount, Number(createForm.columns), Number(createForm.seatsPerBench))),
-                    capacity: String(roomCapacity(
-                      derivedRoomRows(studentCount, Number(createForm.columns), Number(createForm.seatsPerBench)),
-                      Number(createForm.columns),
-                      Number(createForm.seatsPerBench),
-                    )),
+                    capacity: String(studentCount),
                   });
                 }}
               >
@@ -1287,14 +1310,14 @@ function Rooms() {
                 required
                 value={createForm.columns}
                 onChange={(e: any) =>
-                  updateLayoutField(setCreateForm, "columns", e.target.value)
+                  updateCreateLayoutField("columns", e.target.value)
                 }
               />
               <SelectField
                 label="Seats per bench"
                 value={createForm.seatsPerBench}
                 onChange={(e: any) =>
-                  updateLayoutField(setCreateForm, "seatsPerBench", e.target.value)
+                  updateCreateLayoutField("seatsPerBench", e.target.value)
                 }
               >
                 <option value="1">1 seat</option>
