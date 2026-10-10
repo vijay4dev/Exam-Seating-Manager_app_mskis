@@ -418,13 +418,21 @@ router.post("/sessions/:sessionId/generate", async (req, res): Promise<void> => 
           const candidate = rotation[(rotationPointer + attempt) % rotation.length];
           if ((studentsByClass.get(candidate)?.length ?? 0) > 0) {
             chosenClassId = candidate;
-            rotationPointer = (rotation.indexOf(candidate) + 1) % rotation.length;
+            if (room.seatsPerBench > 1) {
+              rotationPointer = (rotation.indexOf(candidate) + 1) % rotation.length;
+            }
             break;
           }
         }
         if (chosenClassId == null) break;
         const student = studentsByClass.get(chosenClassId)?.shift();
         if (!student) break;
+        if (
+          room.seatsPerBench === 1 &&
+          studentsByClass.get(chosenClassId)?.length === 0
+        ) {
+          rotationPointer = (rotation.indexOf(chosenClassId) + 1) % rotation.length;
+        }
         assignedStudentIds.add(student.id);
         await db.insert(seatAssignmentsTable).values({
           sessionId, roomId: room.id, columnNo: seat.columnNo, benchNo: seat.benchNo, seatNo: seat.seatNo,
