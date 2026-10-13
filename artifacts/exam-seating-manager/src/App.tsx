@@ -121,10 +121,22 @@ async function readCsvFile(file: File) {
   const headers = splitCsvLine(lines[0]).map((header) =>
     header.toLowerCase().replace(/[\s_-]/g, ""),
   );
+  const aliases: Record<string, string> = {
+    roomname: "name",
+    roomtype: "type",
+    serialno: "sno",
+    serialnumber: "sno",
+    roomno: "sno",
+    noofbenches: "benches",
+    numberofbenches: "benches",
+    noofcolumns: "columns",
+    numberofcolumns: "columns",
+  };
+  const normalizedHeaders = headers.map((header) => aliases[header] ?? header);
   return lines.slice(1).map((line) => {
     const values = splitCsvLine(line);
     return Object.fromEntries(
-      headers.map((header, index) => [header, values[index] ?? ""]),
+      normalizedHeaders.map((header, index) => [header, values[index] ?? ""]),
     );
   });
 }
@@ -1004,8 +1016,8 @@ function Rooms() {
           );
         return {
           sno: Number(row.sno) || index + 1,
-          name: row.name,
-          type: row.type === "hall" ? "hall" : "classroom",
+          name: String(row.name ?? "").trim(),
+          type: String(row.type ?? "").trim().toLowerCase() === "hall" ? "hall" : "classroom",
           capacity:
             Number.isFinite(requestedCapacity) && requestedCapacity > 0
               ? requestedCapacity
@@ -1017,7 +1029,15 @@ function Rooms() {
       });
       preview.mutate(
         { data: { fileName: roomFile.name, rows } as any },
-        { onSuccess: setPreviewData },
+        {
+          onSuccess: setPreviewData,
+          onError: (error: any) => {
+            toast({
+              title: "Room file could not be previewed",
+              description: error?.message || "Check that the file has valid room names and values.",
+            });
+          },
+        },
       );
     } catch (error: any) {
       setPreviewData({ rows: [], errors: [error.message] });
