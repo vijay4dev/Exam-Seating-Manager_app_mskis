@@ -999,8 +999,28 @@ function Rooms() {
   };
   const parseImport = async () => {
     if (!roomFile) return;
+    if (/\.xlsx?$/i.test(roomFile.name)) {
+      toast({
+        title: "This is a student roster workbook",
+        description: "Upload it from Students using Upload roster Excel. Room imports accept CSV files.",
+      });
+      return;
+    }
     try {
       const sourceRows = await readCsvFile(roomFile);
+      const headers = Object.keys(sourceRows[0] ?? {});
+      const isRosterCsv =
+        headers.some((header) => ["rollno", "rollnumber"].includes(header)) &&
+        headers.some((header) => ["studentname", "name"].includes(header)) &&
+        headers.some((header) => ["class", "grade", "classname"].includes(header)) &&
+        headers.some((header) => ["sec", "section"].includes(header));
+      if (isRosterCsv) {
+        toast({
+          title: "This CSV contains student roster data",
+          description: "Upload it from Students using Upload roster Excel, not from the room importer.",
+        });
+        return;
+      }
       const rows = sourceRows.map((row: any, index: number) => {
         const columns = Number(row.columns) || 3;
         const seatsPerBench = Number(row.seatsperbench) === 1 ? 1 : 2;
